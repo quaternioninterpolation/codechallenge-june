@@ -20,9 +20,8 @@ class SampledProgressDrawable(
     private val stateTransitionDuration: Long = 1_000L
 ) : Drawable() {
 
-    private val maxSamples = (maxDuration * sampleRate).toInt()
+    private val maxSamples = (maxDuration / sampleRate).toInt()
     private val sampleQueue = ArrayDeque<Float>(maxSamples)
-    private val curPoints = FloatArray(maxSamples)
     //TODO: Drawn points
     private var progress = 0f
 
@@ -45,41 +44,43 @@ class SampledProgressDrawable(
         val deltaTime = (System.currentTimeMillis() - lastTime) / 1000f
         lastTime = System.currentTimeMillis()
 
-        //Update points
-        updatePoints()
+        transitionInterpolator?.update(deltaTime)
 
         //Draw line
         canvas.apply {
             //TODO: Draw shadow
 
-            drawLines(sampleQueue.toFloatArray(), linePaint)
+            drawLines(calculateCanvasPoints(bounds.width().toFloat(), bounds.height().toFloat()), linePaint)
+
+            //TODO: Offset matrix according to progress?
         }
+
+        if (transitionInterpolator?.isComplete() == true)
+            transitionInterpolator = null
 
         invalidateSelf()
     }
 
-    private fun updatePoints() {
+    private fun calculateCanvasPoints(canvasWidth: Float, canvasHeight: Float) = ArrayList<Float>().apply {
+        val maxSizePercent = canvasHeight * (bottomBoundOffsetPercent - topBoundOffsetPercent)
+
         val multiplier = transitionInterpolator?.let { interpolator ->
             //Interpolate!
             if (isPlaying)
                 interpolator.getProgress()
             else
                 1f - interpolator.getProgress()
-        } ?: 1f
+        } ?: if (isPlaying) 1f else 0f
 
-        if (transitionInterpolator?.isComplete() == true)
-            transitionInterpolator = null
-
-        sampleQueue.forEachIndexed { index, sample ->
-            curPoints[index] = sample * multiplier
-        }
-    }
-
-    private fun getCanvasPoints(canvasWidth: Float) = ArrayList<Float>().apply {
         //Build points array (X, Y, X, Y etc)
         sampleQueue.forEachIndexed { index, sample ->
-            val
-            add(sample)
+            val correctedSample = sample * multiplier
+
+            //X
+            add((index.toFloat() / sampleQueue.size.toFloat()) * canvasWidth)
+
+            //Y
+            add((correctedSample * maxSizePercent * canvasHeight) + (topBoundOffsetPercent * canvasHeight))
         }
     }.toFloatArray()
 
@@ -93,7 +94,7 @@ class SampledProgressDrawable(
         //Stub
     }
 
-    fun addSample(sample: Float, progressPercent: Float) {
+    fun addSample(sample: Float) {
         sampleQueue.apply {
             push(sample)
             if (size > maxSamples) {
